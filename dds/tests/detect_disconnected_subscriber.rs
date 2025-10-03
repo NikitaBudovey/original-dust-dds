@@ -1,11 +1,7 @@
 use dust_dds::{
-    domain::domain_participant_factory::DomainParticipantFactory,
-    listener::NO_LISTENER,
-    infrastructure::{
-        qos::QosKind,
-        status::{StatusKind, NO_STATUS},
-        type_support::DdsType,
-    },
+    domain::domain_participant_factory::DomainParticipantFactory, infrastructure::{
+        qos::{DataReaderQos, QosKind}, qos_policy::{DurabilityQosPolicy, DurabilityQosPolicyKind, ReliabilityQosPolicy, ReliabilityQosPolicyKind}, status::{StatusKind, NO_STATUS}, time::{Duration, DurationKind}, type_support::DdsType
+    }, listener::NO_LISTENER
 };
 use std::{
     sync::mpsc::{sync_channel, SyncSender,},
@@ -80,14 +76,18 @@ fn run_publisher(domain_id: i32, topic_name: &str) {
         .create_datawriter(&topic, QosKind::Default, NO_LISTENER, NO_STATUS)
         .unwrap();
 
-    let sample = TestType {
-        id: 3,
-        message: String::from("Test"),
-    };
-    println!("Writing sample: {:?}", sample);
-    let result = writer.write(&sample, None);
-    assert!(result.is_ok());
-    println!("Sample written successfully.");
+    for i in 0..10 {
+        let sample = TestType {
+            id: 3 + i,
+            message: String::from("Test"),
+        };
+        println!("Writing sample: {:?}", sample);
+        let result = writer.write(&sample, None);
+        assert!(result.is_ok());
+        println!("Sample written successfully.");
+
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
 
     // Clean up
     publisher.delete_datawriter(&writer).unwrap();
@@ -115,7 +115,8 @@ fn run_subscriber(domain_id: i32, topic_name: &str) {
 
     let (sender, receiver) = sync_channel(0);
     let listener = Listener { sender };
-    let _reader = subscriber
+
+    let reader = subscriber
         .create_datareader(
             &topic,
             QosKind::Default,
@@ -124,11 +125,14 @@ fn run_subscriber(domain_id: i32, topic_name: &str) {
         )
         .unwrap();
 
-    println!("Sample read successfully.");
-    
-    let _ = receiver.recv_timeout(std::time::Duration::from_secs(20));
+    //let result = receiver.recv_timeout(std::time::Duration::from_secs(2));
+    //let result = receiver.recv();
+    assert!(result.is_ok(), "{:?}", result.err());
+
+    println!("Sample read successfully");
 
     // Clean up
+    subscriber.delete_datareader(&reader).unwrap();
 }
 
 #[test]
@@ -140,12 +144,8 @@ fn test_publisher_subscriber_threads() {
         run_publisher(domain_id, topic_name);
     });
 
-    thread::sleep(std::time::Duration::from_secs(6));
-
-    let subscriber_thread = thread::spawn(move || {
-        run_subscriber(domain_id, topic_name);
-    });
+    run_subscriber(domain_id, topic_name);
+    run_subscriber(domain_id, topic_name);
 
     publisher_thread.join().unwrap();
-    subscriber_thread.join().unwrap();
 }
